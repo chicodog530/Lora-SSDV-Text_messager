@@ -53,6 +53,9 @@ uint8_t rxMask[(65536 / MAX_PAYLOAD) / 8 + 1];
 String rxTextMessage = "";
 uint32_t rxTextId = 0;
 
+// Remote Camera State
+bool remoteImageRequested = false;
+
 // ===========================================================================
 // CRC32 CALCULATION
 // ===========================================================================
@@ -211,7 +214,13 @@ void doReceive() {
         if (radioParser.feed(Radio.read(), rxFrame)) {
             lastReceiveTime = millis();
             
-            if (rxFrame.type == TEXT_MSG) {
+            if (rxFrame.type == REQUEST_IMAGE) {
+                if (currentState == STATE_TX) continue;
+                remoteImageRequested = true;
+                delay(RADIO_TURNAROUND_DELAY);
+                sendFrame(Radio, ACK, rxFrame.imageId, rxFrame.seq, nullptr, 0);
+
+            } else if (rxFrame.type == TEXT_MSG) {
                 if (currentState == STATE_TX) continue;
                 
                 String newText = "";
@@ -317,7 +326,8 @@ void handleStatus() {
     escapedText.replace("\r", "\\r");
     
     json += "\"rxTextId\":" + String(rxTextId) + ",";
-    json += "\"rxText\":\"" + escapedText + "\"";
+    json += "\"rxText\":\"" + escapedText + "\",";
+    json += "\"imageRequested\":" + String(remoteImageRequested ? "true" : "false");
     json += "}";
     server.send(200, "application/json", json);
 }
@@ -329,6 +339,7 @@ void handleUploadData() {
         txLength = 0;
         rxLength = 0;
         completedRxImageId = 0; // Clear the incoming photo since we are overwriting the shared buffer
+        remoteImageRequested = false; // Reset request flag since we are fulfilling it
     } else if (upload.status == UPLOAD_FILE_WRITE) {
         if (currentState != STATE_IDLE) return;
         if (txLength + upload.currentSize > sizeof(sharedBuffer)) return;
@@ -411,6 +422,23 @@ void handleSendText() {
     }
 }
 
+void handleRequestImage() {
+    if (currentState != STATE_IDLE) {
+        server.send(400, "text/plain", "Busy");
+        return;
+    }
+    currentState = STATE_TX;
+    // Send a blank REQUEST_IMAGE frame
+    bool success = reliableSend(REQUEST_IMAGE, 0, nullptr, 0, ACK);
+    currentState = STATE_IDLE;
+    
+    if (success) {
+        server.send(200, "text/plain", "OK");
+    } else {
+        server.send(500, "text/plain", "No ACK");
+    }
+}
+
 // ===========================================================================
 // SETUP
 // ===========================================================================
@@ -446,6 +474,7 @@ void setup() {
     server.on("/rx_image.bin", HTTP_GET, handleRxImage);
     server.on("/rename", HTTP_POST, handleRename);
     server.on("/send_text", HTTP_POST, handleSendText);
+    server.on("/request_image", HTTP_POST, handleRequestImage);
     server.begin();
 }
 

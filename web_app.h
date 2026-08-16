@@ -220,6 +220,21 @@ const char* WEB_APP_HTML = R"rawliteral(
         </div>
     </div>
 
+    <!-- REMOTE CAMERA -->
+    <div class="card">
+        <h2 class="card-title">Remote Camera</h2>
+        <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 15px;">
+            Request a photo from the other node, or leave this device on the counter to act as the remote camera.
+        </div>
+        <button class="btn btn-outline" id="request-remote-btn" style="margin-bottom: 15px;">Request Remote Photo</button>
+        
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+            <input type="checkbox" id="remote-cam-toggle" style="width: 18px; height: 18px;">
+            <span style="font-size: 14px; font-weight: 600;">Enable Remote Camera Mode</span>
+        </label>
+        <video id="remote-video" autoplay playsinline muted style="display:none; width:100%; border-radius:8px; margin-top:10px;"></video>
+    </div>
+
     <!-- SETTINGS -->
     <div class="card">
         <h2 class="card-title">Device Settings</h2>
@@ -328,6 +343,11 @@ const char* WEB_APP_HTML = R"rawliteral(
                     txPlaceholder.style.display = 'none';
                     sendBtn.style.display = 'block';
                     sendBtn.innerText = `Send over LoRa (${(blob.size/1024).toFixed(1)} KB)`;
+                    
+                    if (window.autoSnapCallback) {
+                        window.autoSnapCallback();
+                        window.autoSnapCallback = null;
+                    }
                 }
             }, 'image/jpeg', quality);
         };
@@ -420,6 +440,46 @@ const char* WEB_APP_HTML = R"rawliteral(
             .catch(e => alert("Error renaming: " + e.message));
     }
 
+    // Remote Camera Logic
+    const remoteCamToggle = document.getElementById('remote-cam-toggle');
+    const requestRemoteBtn = document.getElementById('request-remote-btn');
+    const remoteVideo = document.getElementById('remote-video');
+    let videoStream = null;
+    let isProcessingAutoSnap = false;
+
+    requestRemoteBtn.addEventListener('click', async () => {
+        requestRemoteBtn.disabled = true;
+        requestRemoteBtn.innerText = "Requesting...";
+        try {
+            const res = await fetch('/request_image', { method: 'POST' });
+            if (!res.ok) throw new Error("No ACK from remote node");
+            alert("Request delivered! Waiting for photo...");
+        } catch (e) {
+            alert(e.message);
+        }
+        requestRemoteBtn.disabled = false;
+        requestRemoteBtn.innerText = "Request Remote Photo";
+    });
+
+    remoteCamToggle.addEventListener('change', async () => {
+        if (remoteCamToggle.checked) {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                remoteVideo.srcObject = videoStream;
+                remoteVideo.style.display = 'block';
+            } catch (e) {
+                alert("Camera error: " + e.message);
+                remoteCamToggle.checked = false;
+            }
+        } else {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            remoteVideo.style.display = 'none';
+        }
+    });
+
     // Polling Loop
     setInterval(async () => {
         try {
@@ -467,6 +527,26 @@ const char* WEB_APP_HTML = R"rawliteral(
                 if (data.rxText) {
                     appendMessage(data.rxText, false);
                 }
+            }
+            
+            // Auto Snap Logic
+            if (data.imageRequested && remoteCamToggle.checked && !isProcessingAutoSnap && videoStream) {
+                isProcessingAutoSnap = true;
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = remoteVideo.videoWidth || 640;
+                tempCanvas.height = remoteVideo.videoHeight || 480;
+                tempCanvas.getContext('2d').drawImage(remoteVideo, 0, 0);
+                
+                const img = new Image();
+                img.onload = () => {
+                    window.autoSnapCallback = () => {
+                        sendBtn.click();
+                        setTimeout(() => { isProcessingAutoSnap = false; }, 5000);
+                    };
+                    currentImg = img;
+                    processImage(img);
+                };
+                img.src = tempCanvas.toDataURL('image/jpeg', 0.9);
             }
         } catch (e) {}
     }, 1000);
