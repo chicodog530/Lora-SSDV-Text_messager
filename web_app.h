@@ -483,7 +483,8 @@ const char* WEB_APP_HTML = R"rawliteral(
     // Polling Loop
     setInterval(async () => {
         try {
-            const res = await fetch('/status');
+            // Add cache-buster so aggressive mobile browsers don't cache the status!
+            const res = await fetch('/status?t=' + new Date().getTime());
             const data = await res.json();
             
             // Set Status Badge
@@ -532,21 +533,30 @@ const char* WEB_APP_HTML = R"rawliteral(
             // Auto Snap Logic
             if (data.imageRequested && remoteCamToggle.checked && !isProcessingAutoSnap && videoStream) {
                 isProcessingAutoSnap = true;
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = remoteVideo.videoWidth || 640;
-                tempCanvas.height = remoteVideo.videoHeight || 480;
-                tempCanvas.getContext('2d').drawImage(remoteVideo, 0, 0);
                 
-                const img = new Image();
-                img.onload = () => {
-                    window.autoSnapCallback = () => {
-                        sendBtn.click();
-                        setTimeout(() => { isProcessingAutoSnap = false; }, 5000);
+                // Mobile browsers aggressively pause video elements to save battery. Force it to wake up!
+                if (remoteVideo.paused) {
+                    try { await remoteVideo.play(); } catch(e){}
+                }
+                
+                // Give the camera sensor 500ms to adjust exposure/focus after waking up
+                setTimeout(() => {
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = remoteVideo.videoWidth || 640;
+                    tempCanvas.height = remoteVideo.videoHeight || 480;
+                    tempCanvas.getContext('2d').drawImage(remoteVideo, 0, 0);
+                    
+                    const img = new Image();
+                    img.onload = () => {
+                        window.autoSnapCallback = () => {
+                            sendBtn.click();
+                            setTimeout(() => { isProcessingAutoSnap = false; }, 5000);
+                        };
+                        currentImg = img;
+                        processImage(img);
                     };
-                    currentImg = img;
-                    processImage(img);
-                };
-                img.src = tempCanvas.toDataURL('image/jpeg', 0.9);
+                    img.src = tempCanvas.toDataURL('image/jpeg', 0.9);
+                }, 500);
             }
         } catch (e) {}
     }, 1000);
