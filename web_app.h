@@ -232,6 +232,12 @@ const char* WEB_APP_HTML = R"rawliteral(
             <input type="checkbox" id="remote-cam-toggle" style="width: 18px; height: 18px;">
             <span style="font-size: 14px; font-weight: 600;">Enable Remote Camera Mode</span>
         </label>
+        
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; margin-top: 10px;">
+            <input type="checkbox" id="motion-detect-toggle" style="width: 18px; height: 18px;">
+            <span style="font-size: 14px; font-weight: 600;">Enable Motion Detection (Security Cam)</span>
+        </label>
+        
         <video id="remote-video" autoplay playsinline muted style="display:none; width:100%; border-radius:8px; margin-top:10px;"></video>
     </div>
 
@@ -470,6 +476,7 @@ const char* WEB_APP_HTML = R"rawliteral(
             } catch (e) {
                 alert("Camera error: " + e.message);
                 remoteCamToggle.checked = false;
+                motionDetectToggle.checked = false;
             }
         } else {
             if (videoStream) {
@@ -477,8 +484,86 @@ const char* WEB_APP_HTML = R"rawliteral(
                 videoStream = null;
             }
             remoteVideo.style.display = 'none';
+            motionDetectToggle.checked = false;
         }
     });
+    
+    // Motion Detection Logic
+    const motionDetectToggle = document.getElementById('motion-detect-toggle');
+    let previousPixels = null;
+    let motionCooldownUntil = 0;
+    const motionCanvas = document.createElement('canvas');
+    motionCanvas.width = 64;
+    motionCanvas.height = 64;
+    const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
+    
+    motionDetectToggle.addEventListener('change', () => {
+        if (motionDetectToggle.checked && !remoteCamToggle.checked) {
+            remoteCamToggle.click(); // Automatically turn on camera
+        }
+    });
+
+    function triggerAutoSnap(isMotionTrigger = false) {
+        if (isProcessingAutoSnap) return;
+        isProcessingAutoSnap = true;
+        
+        if (isMotionTrigger) {
+            motionCooldownUntil = new Date().getTime() + 30000; // 30 sec cooldown
+        }
+        
+        if (remoteVideo.paused) {
+            try { remoteVideo.play(); } catch(e){}
+        }
+        
+        setTimeout(() => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = remoteVideo.videoWidth || 640;
+            tempCanvas.height = remoteVideo.videoHeight || 480;
+            tempCanvas.getContext('2d').drawImage(remoteVideo, 0, 0);
+            
+            const img = new Image();
+            img.onload = () => {
+                window.autoSnapCallback = () => {
+                    sendBtn.click();
+                    setTimeout(() => { isProcessingAutoSnap = false; }, 5000);
+                };
+                currentImg = img;
+                processImage(img);
+            };
+            img.src = tempCanvas.toDataURL('image/jpeg', 0.9);
+        }, 500);
+    }
+
+    // Motion Analysis Loop (Every 1 second)
+    setInterval(() => {
+        if (motionDetectToggle.checked && videoStream && !remoteVideo.paused && !isProcessingAutoSnap) {
+            const now = new Date().getTime();
+            if (now < motionCooldownUntil) return;
+            
+            motionCtx.drawImage(remoteVideo, 0, 0, 64, 64);
+            const currentPixels = motionCtx.getImageData(0, 0, 64, 64).data;
+            
+            if (previousPixels) {
+                let changedPixels = 0;
+                for (let i = 0; i < currentPixels.length; i += 4) {
+                    const rDiff = Math.abs(currentPixels[i] - previousPixels[i]);
+                    const gDiff = Math.abs(currentPixels[i+1] - previousPixels[i+1]);
+                    const bDiff = Math.abs(currentPixels[i+2] - previousPixels[i+2]);
+                    if (rDiff + gDiff + bDiff > 100) {
+                        changedPixels++;
+                    }
+                }
+                
+                const percentChanged = (changedPixels / 4096) * 100;
+                if (percentChanged > 10) { // 10% threshold
+                    triggerAutoSnap(true);
+                }
+            }
+            previousPixels = new Uint8ClampedArray(currentPixels);
+        } else {
+            previousPixels = null;
+        }
+    }, 1000);
 
     // Polling Loop
     setInterval(async () => {
@@ -530,33 +615,9 @@ const char* WEB_APP_HTML = R"rawliteral(
                 }
             }
             
-            // Auto Snap Logic
-            if (data.imageRequested && remoteCamToggle.checked && !isProcessingAutoSnap && videoStream) {
-                isProcessingAutoSnap = true;
-                
-                // Mobile browsers aggressively pause video elements to save battery. Force it to wake up!
-                if (remoteVideo.paused) {
-                    try { await remoteVideo.play(); } catch(e){}
-                }
-                
-                // Give the camera sensor 500ms to adjust exposure/focus after waking up
-                setTimeout(() => {
-                    const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = remoteVideo.videoWidth || 640;
-                    tempCanvas.height = remoteVideo.videoHeight || 480;
-                    tempCanvas.getContext('2d').drawImage(remoteVideo, 0, 0);
-                    
-                    const img = new Image();
-                    img.onload = () => {
-                        window.autoSnapCallback = () => {
-                            sendBtn.click();
-                            setTimeout(() => { isProcessingAutoSnap = false; }, 5000);
-                        };
-                        currentImg = img;
-                        processImage(img);
-                    };
-                    img.src = tempCanvas.toDataURL('image/jpeg', 0.9);
-                }, 500);
+            // Auto Snap Logic (Remote Request)
+            if (data.imageRequested && remoteCamToggle.checked && videoStream) {
+                triggerAutoSnap(false);
             }
         } catch (e) {}
     }, 1000);
