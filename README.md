@@ -33,7 +33,8 @@ The Loongtrek SX1262 UART module connects easily to the ESP32.
 *(Note: Depending on your specific ESP32 board, you can change the RX/TX pins at the top of the `transceiver_v4.ino` sketch).*
 
 ## Setup Instructions
-1. **Configure the LoRa Modules:** By default, these modules might run at 9600 baud. You must configure them to run at 115200 baud to handle the image transfer speeds. Connect the module to a USB-to-TTL serial adapter on your PC, open a serial terminal, and send `AT+BAUD7` (which sets it to 115200). You can verify it by sending `AT+BAUD`.
+1. **Configure the LoRa Modules:** By default, these modules might run at 9600 baud. To handle image transfer speeds, configure them to a faster rate. Connect the module to a USB-to-TTL serial adapter on your PC, open a terminal, and send an AT command like `AT+BAUD5` (38400) or `AT+BAUD7` (115200). 
+   > **CRITICAL:** The baud rate you set on the LoRa hardware *must* match the baud rate defined in the ESP32 code! By default, the code is set to 38400 baud. If you change your hardware baud rate, you must update the `Radio.begin(38400...);` line in the `transceiver_v4.ino` sketch to match!
 2. **Wire it up:** Connect the LoRa modules to your ESP32s according to the wiring guide above. Don't forget to attach the antennas!
 3. **Flash the Firmware:**
    - Open `transceiver_v4.ino` in the Arduino IDE.

@@ -448,7 +448,7 @@ void setup() {
     
     Serial.println("\n--- UNIFIED LORA TRANSCEIVER ---");
     
-    Radio.begin(LORA_UART_BAUD, SERIAL_8N1, LORA_RX, LORA_TX);
+    Radio.begin(38400, SERIAL_8N1, LORA_RX, LORA_TX);
     
     // Generate default AP name based on MAC address
     uint64_t mac = ESP.getEfuseMac();
