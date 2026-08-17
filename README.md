@@ -33,19 +33,20 @@ The Loongtrek SX1262 UART module connects easily to the ESP32.
 *(Note: Depending on your specific ESP32 board, you can change the RX/TX pins at the top of the `transceiver_v4.ino` sketch).*
 
 ## Setup Instructions
-1. **Wire it up:** Connect the LoRa modules to your ESP32s according to the wiring guide above. Don't forget to attach the antennas!
-2. **Flash the Firmware:**
+1. **Configure the LoRa Modules:** By default, these modules might run at 9600 baud. You must configure them to run at 115200 baud to handle the image transfer speeds. Connect the module to a USB-to-TTL serial adapter on your PC, open a serial terminal, and send `AT+BAUD7` (which sets it to 115200). You can verify it by sending `AT+BAUD`.
+2. **Wire it up:** Connect the LoRa modules to your ESP32s according to the wiring guide above. Don't forget to attach the antennas!
+3. **Flash the Firmware:**
    - Open `transceiver_v4.ino` in the Arduino IDE.
    - Select your ESP32 board in the tools menu.
    - Compile and upload the sketch to **both** of your ESP32 boards.
-3. **Power On:** Provide power to both boards via USB or battery.
-4. **Connect to Wi-Fi:** 
+4. **Power On:** Provide power to both boards via USB or battery.
+5. **Connect to Wi-Fi:** 
    - On your smartphone, look for a new Wi-Fi network called `LoRa_Chat_XXXX`.
    - Connect to it using the default password: `12345678`.
-5. **Open the Web App:**
+6. **Open the Web App:**
    - Open your smartphone's Chrome/Safari browser.
    - Navigate to `http://192.168.4.1`.
-6. **Start Chatting:** Use the web interface to type text messages, select photos from your camera roll, apply filters, and send them over the airwaves!
+7. **Start Chatting:** Use the web interface to type text messages, select photos from your camera roll, apply filters, and send them over the airwaves!
 
 ## How to use Motion Detection & Remote Camera
 To use these features, you need a dedicated "Camera Node" (e.g. a spare Android phone left on a counter) and a "Remote Node" (your daily phone).
